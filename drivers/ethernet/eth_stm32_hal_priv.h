@@ -17,8 +17,8 @@
 #define ETH_STM32_HAL_FRAME_SIZE_MAX (ETH_STM32_HAL_MTU + 18)
 
 /* Definition of the Ethernet driver buffers size and count */
-#define ETH_RX_BUF_SIZE	ETH_MAX_PACKET_SIZE /* buffer size for receive */
-#define ETH_TX_BUF_SIZE	ETH_MAX_PACKET_SIZE /* buffer size for transmit */
+#define ETH_RX_BUF_SIZE ETH_MAX_PACKET_SIZE /* buffer size for receive */
+#define ETH_TX_BUF_SIZE ETH_MAX_PACKET_SIZE /* buffer size for transmit */
 
 /* Device constant configuration parameters */
 struct eth_stm32_hal_dev_cfg {
@@ -45,15 +45,22 @@ struct eth_stm32_hal_dev_data {
 #ifdef CONFIG_SOC_SERIES_STM32H7X
 	struct k_sem tx_int_sem;
 #endif /* CONFIG_SOC_SERIES_STM32H7X */
-	K_KERNEL_STACK_MEMBER(rx_thread_stack,
-		CONFIG_ETH_STM32_HAL_RX_THREAD_STACK_SIZE);
+	K_KERNEL_STACK_MEMBER(rx_thread_stack, CONFIG_ETH_STM32_HAL_RX_THREAD_STACK_SIZE);
 	struct k_thread rx_thread;
 	bool link_up;
+#if defined(CONFIG_PTP_CLOCK_STM32)
+	const struct device *ptp_clock;
+	float clk_ratio; //current multiple on ADDEND register base value.
+#endif
 };
 
-#define DEV_CFG(dev) \
-	((const struct eth_stm32_hal_dev_cfg *)(dev)->config)
-#define DEV_DATA(dev) \
-	((struct eth_stm32_hal_dev_data *)(dev)->data)
+/*! @brief Defines the ENET PTP time stamp structure. */
+typedef struct _stm32_ptp_time {
+	uint32_t second; /*!< Second. */
+	uint32_t nanosecond; /*!< Nanosecond. */
+} stm32_ptp_time_t;
+
+#define DEV_CFG(dev) ((const struct eth_stm32_hal_dev_cfg *)(dev)->config)
+#define DEV_DATA(dev) ((struct eth_stm32_hal_dev_data *)(dev)->data)
 
 #endif /* ZEPHYR_DRIVERS_ETHERNET_ETH_STM32_HAL_PRIV_H_ */

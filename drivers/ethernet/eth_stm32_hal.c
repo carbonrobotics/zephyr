@@ -28,6 +28,11 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include <drivers/clock_control/stm32_clock_control.h>
 #include <pinmux/pinmux_stm32.h>
 
+#if defined(CONFIG_PTP_CLOCK_STM32)
+#include <drivers/ptp_clock.h>
+#include <net/gptp.h>
+#endif
+
 #include "eth.h"
 #include "eth_stm32_hal_priv.h"
 
@@ -964,3 +969,156 @@ static struct eth_stm32_hal_dev_data eth0_data = {
 
 ETH_NET_DEVICE_DT_INST_DEFINE(0, eth_initialize, NULL, &eth0_data, &eth0_config,
 			      CONFIG_ETH_INIT_PRIORITY, &eth_api, ETH_STM32_HAL_MTU);
+<<<<<<< HEAD
+=======
+
+#if defined(CONFIG_PTP_CLOCK_STM32) && defined(CONFIG_SOC_SERIES_STM32H7X)
+struct ptp_context {
+	struct eth_stm32_hal_dev_data *eth_dev_data;
+}
+
+static struct ptp_context ptp_stm32_0_context;
+
+void HAL_PTPSetTime(ETH_HandleTypeDef *heth, stm32_ptp_time_t *time)
+{
+	heth->Instance->MACSTSUR = time->second;
+	heth->Instance->MACSTNUR = time->nanosecond;
+
+	heth->Instance->MACTSCR |= ETH_MACTSCR_TSINIT;
+	return;
+}
+
+static int ptp_clock_stm32_set(const struct device *dev, struct net_ptp_time *tm)
+{
+	struct ptp_context *ptp_context = dev->data;
+	struct eth_stm32_hal_dev_data *eth_dev_data = ptp_context->eth_dev_data;
+	stm32_ptp_time_t stm32_time;
+
+	stm32_time.second = tm->_sec.low;
+	stm32_time.nanosecond = tm->nanosecond;
+
+	HAL_PTPSetTime(&(eth_dev_data->heth), &stm32_time);
+	return 0;
+}
+
+void HAL_PTPGetTime(ETH_HandleTypeDef *heth, stm32_ptp_time_t *time)
+{
+	time->second = heth->Instance->MACSTSR;
+	time->nanosecond = heth->Instance->MACSTNR;
+	return;
+}
+
+static int ptp_clock_stm32_get(const struct device *dev, struct net_ptp_time *tm)
+{
+	struct ptp_context *ptp_context = dev->data;
+	struct eth_stm32_hal_dev_data *eth_dev_data = ptp_context->eth_dev_data;
+	stm32_ptp_time_t stm32_time;
+
+	HAL_PTPGetTime(&(eth_dev_data->heth), &stm32_time);
+
+	tm->second = (uint64_t)stm32_time.second;
+	tm->nanosecond = stm32_time.nanosecond;
+	return 0;
+}
+
+void HAL_PTPAdjustNsTime(ETH_HandleTypeDef *heth, int32_t ns_increment)
+{
+	heth->Instance->MACSTSUR = 0x00; // seconds update register
+	heth->Instance->MACSTNUR = ns_increment; // nanoseconds update register
+	heth->Instance->MACTSCR |= ETH_MACTSCR_TSUPDT;
+
+	while ((heth->Instance->MACTSCR & ETH_MACTSCR_TSUPDT_Msk) >> ETH_MACTSCR_TSUPDT_Pos != 0)
+		;
+}
+
+/**
+ * Adjust by increment nanoseconds.
+ */
+static int ptp_clock_stm32_adjust(const struct device *dev, int increment)
+{
+	struct ptp_context *ptp_context = dev->data;
+	struct eth_stm32_hal_dev_data *eth_dev_data = ptp_context->eth_dev_data;
+	int ret = 0;
+
+	if ((increment <= -NSEC_PER_SEC) || (increment >= NSEC_PER_SEC)) {
+		ret = -EINVAL;
+	} else {
+		HAL_PTPAdjustNsTime(&(eth_dev_data->heth), increment);
+	}
+
+	return ret;
+}
+
+uint32_t HAL_PTPGetAddendRegister(ETH_HandleTypeDef *heth)
+{
+	return heth->Instance->MACTSAR;
+}
+
+void HAL_PTPSetAddendRegister(ETH_HandleTypeDef *heth, uint32_t new_val)
+{
+	heth->Instance->MACTSAR = new_val;
+	heth->Instance->MACTSCR |= ETH_MACTSCR_TSADDREG;
+	while ((heth->Instance->MACTSCR & ETH_MACTSCR_TSADDREG) >> ETH_MACTSCR_TSADDREG_Pos != 0)
+		;
+}
+
+/*
+ * Assuming that ratio is the ratio by which we should multiply the current rate, not the original rate.
+ */
+static int ptp_clock_stm32_rate_adjust(const struct device *dev, float ratio)
+{
+	const uint32_t hw_inc =
+		NSEC_PER_SEC /
+		CONFIG_ETH_STM32_PTP_CLOCK_SRC_HZ; // this is 10ns for us, 10^9 / 100 * 10^6
+	struct ptp_context *ptp_context = dev->data;
+	struct eth_stm32_hal_dev_data *eth_dev_data = ptp_context->eth_dev_data;
+
+	uint32_t new_val, val = HAL_PTPGetAddendRegister(&(eth_dev_data->heth));
+
+	/* No change needed. */
+	if (ratio == 1.0) {
+		return 0;
+	}
+
+	new_val = (uint32_t)val * ratio;
+
+	if (new_val >= INT32_MAX) {
+		/* Value is too high.
+		 * It is not possible to adjust the rate of the clock.
+		 */
+		new_val = 0xFFFFFFFF;
+		ratio = ((float)new_val) / val;
+	}
+
+	/* Save new ratio. */
+	eth_dev_data->clk_ratio *= ratio;
+
+	HAL_PTPSetAddendRegister(&(eth_dev_data->heth), new_val);
+
+	return 0;
+}
+
+static const struct ptp_clock_driver_api api = {
+	.set = ptp_clock_stm32_set,
+	.get = ptp_clock_stm32_get,
+	.adjust = ptp_clock_stm32_adjust,
+	.rate_adjust = ptp_clock_stm32_rate_adjust,
+};
+
+static int ptp_stm32_init(const struct device *dev)
+{
+	const struct device *eth_dev = DEVICE_DT_GET(DT_NODELABEL(enet));
+	struct eth_context *context = eth_dev->data;
+	struct ptp_context *ptp_context = port->data;
+
+	context->ptp_clock = port;
+	ptp_context->eth_context = context;
+
+	return 0;
+}
+
+DEVICE_DEFINE(stm32_ptp_clock_0, PTP_CLOCK_NAME, ptp_stm32_init, NULL, &ptp_stm32_0_context, NULL,
+	      POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, &api);
+
+#endif /* CONFIG_PTP_CLOCK_STM32 */
+>>>>>>> b30f84c926 (create ptp api functions in stm32 eth driver only for h7xx boards)
