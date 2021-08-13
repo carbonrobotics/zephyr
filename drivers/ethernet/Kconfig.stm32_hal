@@ -75,6 +75,27 @@ config ETH_STM32_HAL_MAC5
 
 endif # !ETH_STM32_HAL_RANDOM_MAC
 
+if SOC_SERIES_STM32H7X
+
+config PTP_CLOCK_STM32
+	bool "STM32 PTP clock driver support"
+	default y
+	depends on PTP_CLOCK || (NET_PKT_TIMESTAMP && NET_GPTP)
+	help
+	  Enable STM32 PTP clock support.
+
+if PTP_CLOCK_STM32
+
+config ETH_STM32_PTP_CLOCK_SRC_HZ
+	int "Frequency of the clock source for the PTP timer"
+	default 100000000
+	help
+	  Set the frequency in Hz sourced to the PTP timer.
+	  If the value is set properly, the timer will be accurate.
+
+endif # PTP_CLOCK_STM32
+endif #SOC_SERIES_STM32H7X
+
 config ETH_STM32_HAL_MII
 	bool "Use MII interface"
 	help

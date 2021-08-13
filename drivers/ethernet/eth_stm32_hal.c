@@ -36,28 +36,28 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include "eth.h"
 #include "eth_stm32_hal_priv.h"
 
-#if defined(CONFIG_ETH_STM32_HAL_USE_DTCM_FOR_DMA_BUFFER) &&                                       \
-	!DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
+#if defined(CONFIG_ETH_STM32_HAL_USE_DTCM_FOR_DMA_BUFFER) && \
+		!DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
 #error DTCM for DMA buffer is activated but zephyr,dtcm is not present in dts
 #endif
 
-#define PHY_ADDR CONFIG_ETH_STM32_HAL_PHY_ADDRESS
+#define     PHY_ADDR CONFIG_ETH_STM32_HAL_PHY_ADDRESS
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 
-#define PHY_BSR ((uint16_t)0x0001U) /*!< Transceiver Basic Status Register */
-#define PHY_LINKED_STATUS ((uint16_t)0x0004U) /*!< Valid link established */
+#define PHY_BSR  ((uint16_t)0x0001U)  /*!< Transceiver Basic Status Register */
+#define PHY_LINKED_STATUS  ((uint16_t)0x0004U)  /*!< Valid link established */
 
 #define GET_FIRST_DMA_TX_DESC(heth) (heth->Init.TxDesc)
 #define IS_ETH_DMATXDESC_OWN(dma_tx_desc) (dma_tx_desc->DESC3 & ETH_DMATXNDESCRF_OWN)
 
-#define ETH_RXBUFNB ETH_RX_DESC_CNT
-#define ETH_TXBUFNB ETH_TX_DESC_CNT
+#define ETH_RXBUFNB  ETH_RX_DESC_CNT
+#define ETH_TXBUFNB  ETH_TX_DESC_CNT
 
 #define ETH_MEDIA_INTERFACE_MII HAL_ETH_MII_MODE
 #define ETH_MEDIA_INTERFACE_RMII HAL_ETH_RMII_MODE
 
-#define ETH_DMA_TX_TIMEOUT_MS 20U /* transmit timeout in milliseconds */
+#define ETH_DMA_TX_TIMEOUT_MS 20U  /* transmit timeout in milliseconds */
 
 /* Only one tx_buffer is sufficient to pass only 1 dma_buffer */
 #define ETH_TXBUF_DEF_NB 1U
@@ -235,6 +235,24 @@ static inline void disable_mcast_filter(ETH_HandleTypeDef *heth)
 #endif /* CONFIG_SOC_SERIES_STM32H7X) */
 }
 
+#if defined(CONFIG_PTP_CLOCK_STM32)
+
+static bool eth_get_ptp_data(struct net_if *iface, struct net_pkt *pkt)
+{
+	int eth_hlen;
+
+	if (ntohs(NET_ETH_HDR(pkt)->type) != NET_ETH_PTYPE_PTP) {
+		return false;
+	}
+
+	eth_hlen = sizeof(struct net_eth_hdr);
+
+	net_pkt_set_priority(pkt, NET_PRIORITY_CA);
+
+	return true;
+}
+#endif /* CONFIG_PTP_CLOCK_MCUX */
+
 static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 {
 	struct eth_stm32_hal_dev_data *dev_data = DEV_DATA(dev);
@@ -263,6 +281,9 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 	const uint32_t cur_tx_desc_idx = 0; /* heth->TxDescList.CurTxDesc; */
+#if defined(CONFIG_PTP_CLOCK_STM32)
+	bool timestamped_frame;
+#endif
 #endif
 
 	dma_tx_desc = GET_FIRST_DMA_TX_DESC(heth);
@@ -295,6 +316,14 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 
 	/* Reset TX complete interrupt semaphore before TX request*/
 	k_sem_reset(&dev_data->tx_int_sem);
+
+#if defined(CONFIG_PTP_CLOCK_STM32)
+	timestamped_frame = eth_get_ptp_data(net_pkt_iface(pkt), pkt);
+	if (timestamped_frame) {
+		dma_tx_desc->DESC2 |=
+			0x40000000; // Transmit TimeStamp Enable let's hope this persists till DMA reads it.
+	}
+#endif
 
 	/* tx_buffer is allocated on function stack, we need */
 	/* to wait for the transfer to complete */
@@ -403,6 +432,9 @@ static struct net_pkt *eth_rx(const struct device *dev, uint16_t *vlan_tag)
 	size_t total_len;
 	uint8_t *dma_buffer;
 	HAL_StatusTypeDef hal_ret = HAL_OK;
+#if defined(CONFIG_SOC_SERIES_STM32H7X) && defined(CONFIG_PTP_CLOCK_STM32)
+	stm32_ptp_time_t ptpTimeData;
+#endif
 
 	__ASSERT_NO_MSG(dev != NULL);
 
