@@ -37,7 +37,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include "eth_stm32_hal_priv.h"
 
 #if defined(CONFIG_ETH_STM32_HAL_USE_DTCM_FOR_DMA_BUFFER) && \
-		!DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
+	!DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
 #error DTCM for DMA buffer is activated but zephyr,dtcm is not present in dts
 #endif
 
@@ -45,7 +45,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 
-#define PHY_BSR  ((uint16_t)0x0001U)  /*!< Transceiver Basic Status Register */
+#define PHY_BSR  ((uint16_t)0x0001U)            /*!< Transceiver Basic Status Register */
 #define PHY_LINKED_STATUS  ((uint16_t)0x0004U)  /*!< Valid link established */
 
 #define GET_FIRST_DMA_TX_DESC(heth) (heth->Init.TxDesc)
@@ -68,7 +68,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #endif /* CONFIG_SOC_SERIES_STM32H7X */
 
-#if defined(CONFIG_ETH_STM32_HAL_USE_DTCM_FOR_DMA_BUFFER) &&                                       \
+#if defined(CONFIG_ETH_STM32_HAL_USE_DTCM_FOR_DMA_BUFFER) && \
 	DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
 #define __eth_stm32_desc __dtcm_noinit_section
 #define __eth_stm32_buf __dtcm_noinit_section
@@ -184,9 +184,9 @@ static void enable_canbus_eth_translator_filter(ETH_HandleTypeDef *heth, uint8_t
 	/*enable filter 1 and ignore byte 5 and 6 for filtering*/
 	heth->Instance->MACA1HR =
 		ETH_MACA1HR_AE | ETH_MACA1HR_MBC_HBits15_8 | ETH_MACA1HR_MBC_HBits7_0;
-#endif /* CONFIG_SOC_SERIES_STM32H7X */
+#endif  /* CONFIG_SOC_SERIES_STM32H7X */
 }
-#endif /*CONFIG_NET_L2_CANBUS_ETH_TRANSLATOR*/
+#endif  /*CONFIG_NET_L2_CANBUS_ETH_TRANSLATOR*/
 
 static HAL_StatusTypeDef read_eth_phy_register(ETH_HandleTypeDef *heth, uint32_t PHYAddr,
 					       uint32_t PHYReg, uint32_t *RegVal)
@@ -425,6 +425,7 @@ static struct net_pkt *eth_rx(const struct device *dev, uint16_t *vlan_tag)
 {
 	struct eth_stm32_hal_dev_data *dev_data;
 	ETH_HandleTypeDef *heth;
+
 #if !defined(CONFIG_SOC_SERIES_STM32H7X)
 	__IO ETH_DMADescTypeDef *dma_rx_desc;
 #endif /* !CONFIG_SOC_SERIES_STM32H7X */
@@ -895,7 +896,7 @@ static enum ethernet_hw_caps eth_stm32_hal_get_capabilities(const struct device 
 #if defined(CONFIG_NET_VLAN)
 	       | ETHERNET_HW_VLAN
 #endif
-		;
+	;
 }
 
 static int eth_stm32_hal_set_config(const struct device *dev, enum ethernet_config_type type,
@@ -1055,8 +1056,8 @@ static int ptp_clock_stm32_get(const struct device *dev, struct net_ptp_time *tm
 
 void HAL_PTPAdjustNsTime(ETH_HandleTypeDef *heth, int32_t ns_increment)
 {
-	heth->Instance->MACSTSUR = 0x00; // seconds update register
-	heth->Instance->MACSTNUR = ns_increment; // nanoseconds update register
+	heth->Instance->MACSTSUR = 0x00;                // seconds update register
+	heth->Instance->MACSTNUR = ns_increment;        // nanoseconds update register
 	heth->Instance->MACTSCR |= ETH_MACTSCR_TSUPDT;
 
 	while ((heth->Instance->MACTSCR & ETH_MACTSCR_TSUPDT_Msk) >> ETH_MACTSCR_TSUPDT_Pos != 0)
