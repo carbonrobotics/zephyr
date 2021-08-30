@@ -36,28 +36,28 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #include "eth.h"
 #include "eth_stm32_hal_priv.h"
 
-#if defined(CONFIG_ETH_STM32_HAL_USE_DTCM_FOR_DMA_BUFFER) && \
+#if defined(CONFIG_ETH_STM32_HAL_USE_DTCM_FOR_DMA_BUFFER) &&                                       \
 	!DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
 #error DTCM for DMA buffer is activated but zephyr,dtcm is not present in dts
 #endif
 
-#define     PHY_ADDR CONFIG_ETH_STM32_HAL_PHY_ADDRESS
+#define PHY_ADDR CONFIG_ETH_STM32_HAL_PHY_ADDRESS
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 
-#define PHY_BSR  ((uint16_t)0x0001U)            /*!< Transceiver Basic Status Register */
-#define PHY_LINKED_STATUS  ((uint16_t)0x0004U)  /*!< Valid link established */
+#define PHY_BSR ((uint16_t)0x0001U) /*!< Transceiver Basic Status Register */
+#define PHY_LINKED_STATUS ((uint16_t)0x0004U) /*!< Valid link established */
 
 #define GET_FIRST_DMA_TX_DESC(heth) (heth->Init.TxDesc)
 #define IS_ETH_DMATXDESC_OWN(dma_tx_desc) (dma_tx_desc->DESC3 & ETH_DMATXNDESCRF_OWN)
 
-#define ETH_RXBUFNB  ETH_RX_DESC_CNT
-#define ETH_TXBUFNB  ETH_TX_DESC_CNT
+#define ETH_RXBUFNB ETH_RX_DESC_CNT
+#define ETH_TXBUFNB ETH_TX_DESC_CNT
 
 #define ETH_MEDIA_INTERFACE_MII HAL_ETH_MII_MODE
 #define ETH_MEDIA_INTERFACE_RMII HAL_ETH_RMII_MODE
 
-#define ETH_DMA_TX_TIMEOUT_MS 20U  /* transmit timeout in milliseconds */
+#define ETH_DMA_TX_TIMEOUT_MS 20U /* transmit timeout in milliseconds */
 
 /* Only one tx_buffer is sufficient to pass only 1 dma_buffer */
 #define ETH_TXBUF_DEF_NB 1U
@@ -68,7 +68,7 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #endif /* CONFIG_SOC_SERIES_STM32H7X */
 
-#if defined(CONFIG_ETH_STM32_HAL_USE_DTCM_FOR_DMA_BUFFER) && \
+#if defined(CONFIG_ETH_STM32_HAL_USE_DTCM_FOR_DMA_BUFFER) &&                                       \
 	DT_NODE_HAS_STATUS(DT_CHOSEN(zephyr_dtcm), okay)
 #define __eth_stm32_desc __dtcm_noinit_section
 #define __eth_stm32_buf __dtcm_noinit_section
@@ -184,9 +184,9 @@ static void enable_canbus_eth_translator_filter(ETH_HandleTypeDef *heth, uint8_t
 	/*enable filter 1 and ignore byte 5 and 6 for filtering*/
 	heth->Instance->MACA1HR =
 		ETH_MACA1HR_AE | ETH_MACA1HR_MBC_HBits15_8 | ETH_MACA1HR_MBC_HBits7_0;
-#endif  /* CONFIG_SOC_SERIES_STM32H7X */
+#endif /* CONFIG_SOC_SERIES_STM32H7X */
 }
-#endif  /*CONFIG_NET_L2_CANBUS_ETH_TRANSLATOR*/
+#endif /*CONFIG_NET_L2_CANBUS_ETH_TRANSLATOR*/
 
 static HAL_StatusTypeDef read_eth_phy_register(ETH_HandleTypeDef *heth, uint32_t PHYAddr,
 					       uint32_t PHYReg, uint32_t *RegVal)
@@ -235,24 +235,6 @@ static inline void disable_mcast_filter(ETH_HandleTypeDef *heth)
 #endif /* CONFIG_SOC_SERIES_STM32H7X) */
 }
 
-#if defined(CONFIG_PTP_CLOCK_STM32)
-
-static bool eth_get_ptp_data(struct net_if *iface, struct net_pkt *pkt)
-{
-	int eth_hlen;
-
-	if (ntohs(NET_ETH_HDR(pkt)->type) != NET_ETH_PTYPE_PTP) {
-		return false;
-	}
-
-	eth_hlen = sizeof(struct net_eth_hdr);
-
-	net_pkt_set_priority(pkt, NET_PRIORITY_CA);
-
-	return true;
-}
-#endif /* CONFIG_PTP_CLOCK_MCUX */
-
 static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 {
 	struct eth_stm32_hal_dev_data *dev_data = DEV_DATA(dev);
@@ -281,9 +263,6 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 	const uint32_t cur_tx_desc_idx = 0; /* heth->TxDescList.CurTxDesc; */
-#if defined(CONFIG_PTP_CLOCK_STM32)
-	bool timestamped_frame;
-#endif
 #endif
 
 	dma_tx_desc = GET_FIRST_DMA_TX_DESC(heth);
@@ -316,14 +295,6 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 
 	/* Reset TX complete interrupt semaphore before TX request*/
 	k_sem_reset(&dev_data->tx_int_sem);
-
-#if defined(CONFIG_PTP_CLOCK_STM32)
-	timestamped_frame = eth_get_ptp_data(net_pkt_iface(pkt), pkt);
-	if (timestamped_frame) {
-		dma_tx_desc->DESC2 |=
-			0x40000000; // Transmit TimeStamp Enable let's hope this persists till DMA reads it.
-	}
-#endif
 
 	/* tx_buffer is allocated on function stack, we need */
 	/* to wait for the transfer to complete */
@@ -425,7 +396,6 @@ static struct net_pkt *eth_rx(const struct device *dev, uint16_t *vlan_tag)
 {
 	struct eth_stm32_hal_dev_data *dev_data;
 	ETH_HandleTypeDef *heth;
-
 #if !defined(CONFIG_SOC_SERIES_STM32H7X)
 	__IO ETH_DMADescTypeDef *dma_rx_desc;
 #endif /* !CONFIG_SOC_SERIES_STM32H7X */
@@ -433,9 +403,6 @@ static struct net_pkt *eth_rx(const struct device *dev, uint16_t *vlan_tag)
 	size_t total_len;
 	uint8_t *dma_buffer;
 	HAL_StatusTypeDef hal_ret = HAL_OK;
-#if defined(CONFIG_SOC_SERIES_STM32H7X) && defined(CONFIG_PTP_CLOCK_STM32)
-	stm32_ptp_time_t ptpTimeData;
-#endif
 
 	__ASSERT_NO_MSG(dev != NULL);
 
@@ -896,7 +863,7 @@ static enum ethernet_hw_caps eth_stm32_hal_get_capabilities(const struct device 
 #if defined(CONFIG_NET_VLAN)
 	       | ETHERNET_HW_VLAN
 #endif
-	;
+		;
 }
 
 static int eth_stm32_hal_set_config(const struct device *dev, enum ethernet_config_type type,
@@ -1002,13 +969,11 @@ static struct eth_stm32_hal_dev_data eth0_data = {
 
 ETH_NET_DEVICE_DT_INST_DEFINE(0, eth_initialize, NULL, &eth0_data, &eth0_config,
 			      CONFIG_ETH_INIT_PRIORITY, &eth_api, ETH_STM32_HAL_MTU);
-<<<<<<< HEAD
-=======
 
 #if defined(CONFIG_PTP_CLOCK_STM32) && defined(CONFIG_SOC_SERIES_STM32H7X)
 struct ptp_context {
 	struct eth_stm32_hal_dev_data *eth_dev_data;
-}
+};
 
 static struct ptp_context ptp_stm32_0_context;
 
@@ -1056,8 +1021,8 @@ static int ptp_clock_stm32_get(const struct device *dev, struct net_ptp_time *tm
 
 void HAL_PTPAdjustNsTime(ETH_HandleTypeDef *heth, int32_t ns_increment)
 {
-	heth->Instance->MACSTSUR = 0x00;                // seconds update register
-	heth->Instance->MACSTNUR = ns_increment;        // nanoseconds update register
+	heth->Instance->MACSTSUR = 0x00; // seconds update register
+	heth->Instance->MACSTNUR = ns_increment; // nanoseconds update register
 	heth->Instance->MACTSCR |= ETH_MACTSCR_TSUPDT;
 
 	while ((heth->Instance->MACTSCR & ETH_MACTSCR_TSUPDT_Msk) >> ETH_MACTSCR_TSUPDT_Pos != 0)
@@ -1138,14 +1103,14 @@ static const struct ptp_clock_driver_api api = {
 	.rate_adjust = ptp_clock_stm32_rate_adjust,
 };
 
-static int ptp_stm32_init(const struct device *dev)
+static int ptp_stm32_init(const struct device *port)
 {
-	const struct device *eth_dev = DEVICE_DT_GET(DT_NODELABEL(enet));
-	struct eth_context *context = eth_dev->data;
+	const struct device *dev = DEVICE_DT_GET(DT_NODELABEL(mac));
+	struct eth_stm32_hal_dev_data *eth_dev_data = DEV_DATA(dev);;
 	struct ptp_context *ptp_context = port->data;
 
-	context->ptp_clock = port;
-	ptp_context->eth_context = context;
+	eth_dev_data->ptp_clock = port;
+	ptp_context->eth_dev_data = eth_dev_data;
 
 	return 0;
 }
@@ -1154,4 +1119,3 @@ DEVICE_DEFINE(stm32_ptp_clock_0, PTP_CLOCK_NAME, ptp_stm32_init, NULL, &ptp_stm3
 	      POST_KERNEL, CONFIG_APPLICATION_INIT_PRIORITY, &api);
 
 #endif /* CONFIG_PTP_CLOCK_STM32 */
->>>>>>> b30f84c926 (create ptp api functions in stm32 eth driver only for h7xx boards)
