@@ -91,6 +91,11 @@ static uint8_t dma_tx_buffer[ETH_TXBUFNB][ETH_TX_BUF_SIZE] __eth_stm32_buf;
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 static ETH_TxPacketConfig tx_config;
 
+#if defined(CONFIG_PTP_CLOCK_STM32)
+/* Packets to be timestamped. */
+static struct net_pkt *ts_tx_pkt[ETH_TXBUFNB];
+static int ts_tx_rd, ts_tx_wr;
+
 void enablePTP(ETH_HandleTypeDef *heth)
 {
 	LOG_INF("inside enable PTP");
@@ -157,6 +162,7 @@ void enablePTP(ETH_HandleTypeDef *heth)
 	while ((heth->Instance->MACCR & 0x03) != 3) {
 	}
 }
+#endif
 
 #endif
 
@@ -235,6 +241,25 @@ static inline void disable_mcast_filter(ETH_HandleTypeDef *heth)
 #endif /* CONFIG_SOC_SERIES_STM32H7X) */
 }
 
+#if defined(CONFIG_SOC_SERIES_STM32H7X) && defined(CONFIG_PTP_CLOCK_STM32)
+
+static bool eth_get_ptp_data(struct net_if *iface, struct net_pkt *pkt)
+{
+	// int eth_hlen;
+
+	// if (ntohs(NET_ETH_HDR(pkt)->type) != NET_ETH_PTYPE_PTP) {
+	// 	return false;
+	// }
+
+	// eth_hlen = sizeof(struct net_eth_hdr);
+
+	// net_pkt_set_priority(pkt, NET_PRIORITY_CA);
+
+	return true;
+}
+#endif /* CONFIG_SOC_SERIES_STM32H7X && CONFIG_PTP_CLOCK_STM32 */
+
+
 static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 {
 	struct eth_stm32_hal_dev_data *dev_data = DEV_DATA(dev);
@@ -263,6 +288,9 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 	const uint32_t cur_tx_desc_idx = 0; /* heth->TxDescList.CurTxDesc; */
+	#if defined(CONFIG_PTP_CLOCK_STM32)
+	bool timestamped_frame;
+#endif
 #endif
 
 	dma_tx_desc = GET_FIRST_DMA_TX_DESC(heth);
@@ -296,6 +324,14 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 	/* Reset TX complete interrupt semaphore before TX request*/
 	k_sem_reset(&dev_data->tx_int_sem);
 
+	#if defined(CONFIG_PTP_CLOCK_STM32)
+	timestamped_frame = eth_get_ptp_data(net_pkt_iface(pkt), pkt);
+	if (timestamped_frame) {
+		dma_tx_desc->DESC2 |=
+			0x40000000; // Transmit TimeStamp Enable let's hope this persists till DMA reads it.
+	}
+#endif
+
 	/* tx_buffer is allocated on function stack, we need */
 	/* to wait for the transfer to complete */
 	/* So it is not freed before the interrupt happens */
@@ -304,6 +340,9 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 	if (hal_ret != HAL_OK) {
 		LOG_ERR("HAL_ETH_Transmit: failed!");
 		res = -EIO;
+		#if defined (CONFIG_PTP_CLOCK_STM32)
+		ts_tx_pkt[ts_tx_wr++] = NULL;
+		#endif
 		goto error;
 	}
 
@@ -342,6 +381,8 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 			/* TODO recover from this */
 		}
 
+		ts_tx_pkt[ts_tx_wr++] = NULL;
+
 		goto error;
 	}
 
@@ -370,7 +411,11 @@ static int eth_tx(const struct device *dev, struct net_pkt *pkt)
 	res = 0;
 error:
 	k_mutex_unlock(&dev_data->tx_mutex);
-
+	#if defined (CONFIG_SOC_SERIES_STM32H7X) && defined (CONFIG_PTP_CLOCK_STM32)
+	if (ts_tx_wr >= ETH_TXBUFNB) {
+			ts_tx_wr = 0;
+	}
+	#endif
 	return res;
 }
 
@@ -604,6 +649,42 @@ static void eth_isr(const struct device *dev)
 	HAL_ETH_IRQHandler(heth);
 }
 #ifdef CONFIG_SOC_SERIES_STM32H7X
+
+#if defined(CONFIG_PTP_CLOCK_STM32) && defined(CONFIG_NET_GPTP)
+static inline void ts_register_tx_event(struct eth_stm32_hal_dev_data *dev_data,
+					 	ETH_HandleTypeDef *heth)
+{
+	struct net_pkt *pkt;
+
+	// pkt = ts_tx_pkt[ts_tx_rd];
+	// if (pkt && atomic_get(&pkt->atomic_ref) > 0) {
+	// 	if (eth_get_ptp_data(net_pkt_iface(pkt), pkt)) {
+	// 		if (frameinfo->isTsAvail) {
+	// 			pkt->timestamp.nanosecond =
+	// 				frameinfo->timeStamp.nanosecond;
+	// 			pkt->timestamp.second =
+	// 				frameinfo->timeStamp.second;
+
+	// 			net_if_add_tx_timestamp(pkt);
+	// 		}
+	// 	}
+
+	// 	net_pkt_unref(pkt);
+	// } else {
+	// 	if (IS_ENABLED(CONFIG_ETH_MCUX_PHY_EXTRA_DEBUG) && pkt) {
+	// 		LOG_ERR("pkt %p already freed", pkt);
+	// 	}
+	// }
+
+	ts_tx_pkt[ts_tx_rd++] = NULL;
+
+	if (ts_tx_rd >= ETH_TXBUFNB) {
+		ts_tx_rd = 0;
+	}
+}
+#endif /* CONFIG_PTP_CLOCK_MCUX && CONFIG_NET_PKT_TIMESTAMP */
+
+
 void HAL_ETH_TxCpltCallback(ETH_HandleTypeDef *heth_handle)
 {
 	__ASSERT_NO_MSG(heth_handle != NULL);
@@ -683,6 +764,12 @@ static int eth_initialize(const struct device *dev)
 	ETH_HandleTypeDef *heth;
 	HAL_StatusTypeDef hal_ret = HAL_OK;
 	int ret = 0;
+
+	#if defined(CONFIG_SOC_SERIES_STM32H7X) && defined(CONFIG_PTP_CLOCK_STM32)
+	ts_tx_rd = 0;
+	ts_tx_wr = 0;
+	(void)memset(ts_tx_pkt, 0, sizeof(ts_tx_pkt));
+#endif
 
 	__ASSERT_NO_MSG(dev != NULL);
 
