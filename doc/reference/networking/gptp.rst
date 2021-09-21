@@ -36,6 +36,8 @@ support must be enabled in ethernet drivers.
 Boards supported:
 
 - :ref:`frdm_k64f`
+- :ref:`nucleo_h745zi_q`
+- :ref:`nucleo_f767zi`
 - :ref:`sam_e70_xplained`
 - :ref:`native_posix` (only usable for simple testing, limited capabilities
   due to lack of hardware clock)
