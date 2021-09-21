@@ -2440,7 +2440,8 @@ static int ptp_clock_sam_gmac_adjust(const struct device *dev, int increment)
 	const struct eth_sam_dev_cfg *const cfg = DEV_CFG(ptp_context->eth_dev);
 	Gmac *gmac = cfg->regs;
 
-	if ((increment <= -NSEC_PER_SEC) || (increment >= NSEC_PER_SEC)) {
+	if ((increment <= (int32_t)-NSEC_PER_SEC) ||
+			(increment >= (int32_t)NSEC_PER_SEC)) {
 		return -EINVAL;
 	}
 
