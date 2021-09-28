@@ -1101,7 +1101,6 @@ ETH_NET_DEVICE_DT_INST_DEFINE(0, eth_initialize,
 
 struct ptp_context {
 	struct eth_stm32_hal_dev_data *eth_dev_data;
-	struct k_mutex ptp_mutex;
 };
 
 static struct ptp_context ptp_stm32_0_context;
@@ -1112,26 +1111,27 @@ static int ptp_clock_stm32_set(const struct device *dev,
 	struct ptp_context *ptp_context = dev->data;
 	struct eth_stm32_hal_dev_data *eth_dev_data = ptp_context->eth_dev_data;
 	ETH_HandleTypeDef *heth = &eth_dev_data->heth;
+	int key;
 
-	k_mutex_lock(&ptp_context->ptp_mutex, K_FOREVER);
+	key = irq_lock();
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 	heth->Instance->MACSTSUR = tm->second;
 	heth->Instance->MACSTNUR = tm->nanosecond;
 	heth->Instance->MACTSCR |= ETH_MACTSCR_TSINIT;
 	while (heth->Instance->MACTSCR & ETH_MACTSCR_TSINIT_Msk) {
-		k_yield();
+		/* spin lock */
 	}
 #else
 	heth->Instance->PTPTSHUR = tm->second;
 	heth->Instance->PTPTSLUR = tm->nanosecond;
 	heth->Instance->PTPTSCR |= ETH_PTPTSCR_TSSTI;
 	while (heth->Instance->PTPTSCR & ETH_PTPTSCR_TSSTI_Msk) {
-		k_yield();
+		/* spin lock */
 	}
 #endif /* CONFIG_SOC_SERIES_STM32H7X */
 
-	k_mutex_unlock(&ptp_context->ptp_mutex);
+	irq_unlock(key);
 
 	return 0;
 }
@@ -1142,8 +1142,9 @@ static int ptp_clock_stm32_get(const struct device *dev,
 	struct ptp_context *ptp_context = dev->data;
 	struct eth_stm32_hal_dev_data *eth_dev_data = ptp_context->eth_dev_data;
 	ETH_HandleTypeDef *heth = &eth_dev_data->heth;
+	int key;
 
-	k_mutex_lock(&ptp_context->ptp_mutex, K_FOREVER);
+	key = irq_lock();
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 	tm->second = heth->Instance->MACSTSR;
@@ -1153,7 +1154,7 @@ static int ptp_clock_stm32_get(const struct device *dev,
 	tm->nanosecond = heth->Instance->PTPTSLR;
 #endif /* CONFIG_SOC_SERIES_STM32H7X */
 
-	k_mutex_unlock(&ptp_context->ptp_mutex);
+	irq_unlock(key);
 
 	return 0;
 }
@@ -1163,13 +1164,13 @@ static int ptp_clock_stm32_adjust(const struct device *dev, int increment)
 	struct ptp_context *ptp_context = dev->data;
 	struct eth_stm32_hal_dev_data *eth_dev_data = ptp_context->eth_dev_data;
 	ETH_HandleTypeDef *heth = &eth_dev_data->heth;
-	int ret;
+	int key, ret;
 
 	if ((increment <= (int32_t)-NSEC_PER_SEC) ||
 			(increment >= (int32_t)NSEC_PER_SEC)) {
 		ret = -EINVAL;
 	} else {
-		k_mutex_lock(&ptp_context->ptp_mutex, K_FOREVER);
+		key = irq_lock();
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 		heth->Instance->MACSTSUR = 0;
@@ -1180,7 +1181,7 @@ static int ptp_clock_stm32_adjust(const struct device *dev, int increment)
 		}
 		heth->Instance->MACTSCR |= ETH_MACTSCR_TSUPDT;
 		while (heth->Instance->MACTSCR & ETH_MACTSCR_TSUPDT_Msk) {
-			k_yield();
+			/* spin lock */
 		}
 #else
 		heth->Instance->PTPTSHUR = 0;
@@ -1191,12 +1192,12 @@ static int ptp_clock_stm32_adjust(const struct device *dev, int increment)
 		}
 		heth->Instance->PTPTSCR |= ETH_PTPTSCR_TSSTU;
 		while (heth->Instance->PTPTSCR & ETH_PTPTSCR_TSSTU_Msk) {
-			k_yield();
+			/* spin lock */
 		}
 #endif /* CONFIG_SOC_SERIES_STM32H7X */
 
 		ret = 0;
-		k_mutex_unlock(&ptp_context->ptp_mutex);
+		irq_unlock(key);
 	}
 
 	return ret;
@@ -1207,7 +1208,7 @@ static int ptp_clock_stm32_rate_adjust(const struct device *dev, float ratio)
 	struct ptp_context *ptp_context = dev->data;
 	struct eth_stm32_hal_dev_data *eth_dev_data = ptp_context->eth_dev_data;
 	ETH_HandleTypeDef *heth = &eth_dev_data->heth;
-	int ret;
+	int key, ret;
 	uint32_t addend_val;
 
 	/* No change needed */
@@ -1215,7 +1216,7 @@ static int ptp_clock_stm32_rate_adjust(const struct device *dev, float ratio)
 		return 0;
 	}
 
-	k_mutex_lock(&ptp_context->ptp_mutex, K_FOREVER);
+	key = irq_lock();
 
 	ratio *= eth_dev_data->clk_ratio_adj;
 
@@ -1235,20 +1236,20 @@ static int ptp_clock_stm32_rate_adjust(const struct device *dev, float ratio)
 	heth->Instance->MACTSAR = addend_val;
 	heth->Instance->MACTSCR |= ETH_MACTSCR_TSADDREG;
 	while (heth->Instance->MACTSCR & ETH_MACTSCR_TSADDREG_Msk) {
-		k_yield();
+		/* spin lock */
 	}
 #else
 	heth->Instance->PTPTSAR = addend_val;
 	heth->Instance->PTPTSCR |= ETH_PTPTSCR_TSARU;
 	while (heth->Instance->PTPTSCR & ETH_PTPTSCR_TSARU_Msk) {
-		k_yield();
+		/* spin lock */
 	}
 #endif /* CONFIG_SOC_SERIES_STM32H7X */
 
 	ret = 0;
 
 error:
-	k_mutex_unlock(&ptp_context->ptp_mutex);
+	irq_unlock(key);
 
 	return ret;
 }
@@ -1272,7 +1273,6 @@ static int ptp_stm32_init(const struct device *port)
 
 	eth_dev_data->ptp_clock = port;
 	ptp_context->eth_dev_data = eth_dev_data;
-	k_mutex_init(&ptp_context->ptp_mutex);
 
 	/* Mask the Timestamp Trigger interrupt */
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
