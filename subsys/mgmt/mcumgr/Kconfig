@@ -377,4 +377,10 @@ config MCUMGR_BUF_USER_DATA_SIZE
 
 	  Note that CONFIG_NET_BUF_USER_DATA_SIZE must be at least as big as
 	  MCUMGR_BUF_USER_DATA_SIZE.
+
+config MCUMGR_SMP_NOTIFY_CALLBACK
+	bool "SMP Notify Callback"
+	default n
+	help
+	  Enables a callback called when receiving requests
 endif # MCUMGR
