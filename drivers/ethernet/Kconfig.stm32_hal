@@ -88,11 +88,34 @@ config ETH_STM32_CARRIER_CHECK_RX_IDLE_TIMEOUT_MS
 	  Set the RX idle timeout period in milliseconds after which the
 	  PHY's carrier status is re-evaluated.
 
+config ETH_STM32_RESET_ON_INIT
+	bool "Reset PHY during initialization"
+	default n
+	help
+	  Enable this to force a reset of the PHY during initialization, either via software or
+	  through a software reset sequence.
+
 config ETH_STM32_AUTO_NEGOTIATION_ENABLE
 	bool "Autonegotiation mode"
 	default y
 	help
 	  Enable this if using autonegotiation
+
+config ETH_STM32_MDI_X
+	bool "Whether MDI-X is enabled"
+	default y
+	help
+	  Set this to enable MDI-X on the PHY if supported to change
+
+if !ETH_STM32_MDI_X
+
+config ETH_STM32_MDI_CH_SWAP
+	bool "Swap TX and RX pairs"
+	help
+	  When selected, TX pair receives, RX pair transmits (crossover function) otherwise
+	  TX pair transmits, RX pair receives (straight through function, default)
+
+endif # !ETH_STM32_MDI_X
 
 if !ETH_STM32_AUTO_NEGOTIATION_ENABLE
 

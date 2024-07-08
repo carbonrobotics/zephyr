@@ -6,6 +6,7 @@
 #ifndef ZEPHYR_DRIVERS_ETHERNET_ETH_STM32_HAL_PRIV_H_
 #define ZEPHYR_DRIVERS_ETHERNET_ETH_STM32_HAL_PRIV_H_
 
+#include <drivers/gpio.h>
 #include <zephyr/kernel.h>
 #include <zephyr/types.h>
 
@@ -30,6 +31,20 @@ struct eth_stm32_hal_dev_cfg {
 	struct stm32_pclken pclken_ptp;
 #endif /* !defined(CONFIG_SOC_SERIES_STM32H7X) */
 	const struct pinctrl_dev_config *pcfg;
+
+	// optional PHY reset line
+	struct gpio_dt_spec phyReset;
+
+	// is the fixed-link prop present?
+	uint16_t force			: 1;
+	// desired link speed (mbps)
+	uint16_t forceSpeed		: 12;
+	// force full duplex?
+	uint16_t forceDuplex		: 1;
+	// enable MDI-X
+	uint16_t mdix			: 1;
+	// swap RX/TX pairs if MDI-X disable
+	uint16_t ch_swap		: 1;
 };
 
 /* Device run time data */

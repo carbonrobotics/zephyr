@@ -20,3 +20,7 @@ properties:
       required: true
     pinctrl-names:
       required: true
+    reset-gpios:
+      type: phandle-array
+      required: false
+      description: Optional hardware reset line for PHY; used in lieu of soft reset if available
