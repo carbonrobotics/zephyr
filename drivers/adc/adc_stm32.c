@@ -1162,10 +1162,17 @@ static const struct adc_driver_api api_stm32_driver_api = {
 
 bool adc_stm32_is_irq_active(ADC_TypeDef *adc)
 {
+#ifdef LL_ADC_IsActiveFlag_EOCS
 	return LL_ADC_IsActiveFlag_EOCS(adc) ||
 	       LL_ADC_IsActiveFlag_OVR(adc) ||
 	       LL_ADC_IsActiveFlag_JEOS(adc) ||
 	       LL_ADC_IsActiveFlag_AWD1(adc);
+#else
+	return LL_ADC_IsActiveFlag_EOC(adc) ||
+	       LL_ADC_IsActiveFlag_OVR(adc) ||
+	       LL_ADC_IsActiveFlag_JEOS(adc) ||
+	       LL_ADC_IsActiveFlag_AWD1(adc);
+#endif
 }
 
 #define HANDLE_IRQS(index)							\
@@ -1186,10 +1193,24 @@ static void adc_stm32_irq_init(void)
 {
 	if (init_irq) {
 		init_irq = false;
+
+		// STM32H7: ADC1/2 share IRQ vector, ADC3 has its own vector
+#ifdef CONFIG_SOC_SERIES_STM32H7X
+		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(adc1)),
+			DT_IRQ(DT_NODELABEL(adc1), priority),
+			adc_stm32_shared_irq_handler, NULL, 0);
+		irq_enable(DT_IRQN(DT_NODELABEL(adc1)));
+
+		IRQ_CONNECT(DT_IRQN(DT_NODELABEL(adc3)),
+			DT_IRQ(DT_NODELABEL(adc3), priority),
+			adc_stm32_shared_irq_handler, NULL, 0);
+		irq_enable(DT_IRQN(DT_NODELABEL(adc3)));
+#else
 		IRQ_CONNECT(DT_INST_IRQN(0),
 			DT_INST_IRQ(0, priority),
 			adc_stm32_shared_irq_handler, NULL, 0);
 		irq_enable(DT_INST_IRQN(0));
+#endif
 	}
 }
 
