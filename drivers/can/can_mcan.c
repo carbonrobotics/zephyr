@@ -380,6 +380,7 @@ int can_mcan_init(const struct device *dev)
 	uint32_t mrba = 0;
 #ifdef CONFIG_CAN_STM32H7
 	mrba = (uint32_t)msg_ram;
+	mrba = 0x4000ac00;
 #endif
 #ifdef CONFIG_CAN_MCUX_MCAN
 	mrba = (uint32_t)msg_ram & CAN_MCAN_MRBA_BA_MSK;
