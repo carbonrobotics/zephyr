@@ -11,6 +11,7 @@
 #include <zephyr/sys/__assert.h>
 #include <zephyr/sys/util.h>
 #include <zephyr/logging/log_output.h>
+#include <zephyr/net/net_pkt.h>
 
 #ifdef __cplusplus
 extern "C" {
@@ -296,6 +297,8 @@ static inline int log_backend_format_set(const struct log_backend *backend, uint
 
 	return backend->api->format_set(backend, log_type);
 }
+
+int log_backend_net_set_server(struct sockaddr *newAddr);
 
 /**
  * @}
