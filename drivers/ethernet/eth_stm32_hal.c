@@ -45,8 +45,14 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 
 #if defined(CONFIG_SOC_SERIES_STM32H7X)
 
+#define PHY_BCR  ((uint16_t)0x0000U) /* Transceiver Basic Control Register */
+#define PHY_REG_BCR_RESET ((uint16_t) (1U << 15)) /* Soft reset bit */
+#define PHY_REG_BCR_SPEED ((uint16_t) (1U << 13)) /* Speed select; 1 = 100Mbps */
+#define PHY_REG_BCR_AUTOEN ((uint16_t) (1U << 12)) /* Autonegotiation enable bit */
+#define PHY_REG_BCR_DUPLEX ((uint16_t) (1U << 8)) /* Full duplex enable bit */
 #define PHY_BSR  ((uint16_t)0x0001U)  /*!< Transceiver Basic Status Register */
 #define PHY_LINKED_STATUS  ((uint16_t)0x0004U)  /*!< Valid link established */
+#define PHY_SPECIAL_CTRL ((uint16_t)27U) /* special control/status Indications Register */
 
 #define IS_ETH_DMATXDESC_OWN(dma_tx_desc)	(dma_tx_desc->DESC3 & \
 							ETH_DMATXNDESCRF_OWN)
@@ -104,6 +110,61 @@ static HAL_StatusTypeDef read_eth_phy_register(ETH_HandleTypeDef *heth,
 	ARG_UNUSED(PHYAddr);
 	return HAL_ETH_ReadPHYRegister(heth, PHYReg, RegVal);
 #endif /* CONFIG_SOC_SERIES_STM32H7X */
+}
+
+static HAL_StatusTypeDef write_eth_phy_register(ETH_HandleTypeDef *heth,
+						uint32_t PHYAddr,
+						uint32_t PHYReg,
+						const uint32_t RegVal)
+{
+#if defined(CONFIG_SOC_SERIES_STM32H7X)
+	return HAL_ETH_WritePHYRegister(heth, PHYAddr, PHYReg, RegVal);
+#else
+	ARG_UNUSED(PHYAddr);
+	return HAL_ETH_WritePHYRegister(heth, PHYReg, RegVal);
+#endif /* CONFIG_SOC_SERIES_STM32H7X */
+}
+
+/**
+ * @brief Perform PHY reset
+ *
+ * If a hardware reset GPIO is specified, we'll use that; otherwise the soft reset bit in the
+ * Basic Control register (0.15) is used.
+ */
+static int phy_do_reset(const struct eth_stm32_hal_dev_cfg *cfg, ETH_HandleTypeDef *heth) {
+	// hardware reset line present
+	if(cfg->phyReset.port) {
+		gpio_pin_set_dt(&cfg->phyReset, 1);
+		k_busy_wait(200);
+		gpio_pin_set_dt(&cfg->phyReset, 0);
+
+		// TODO: should this be configurable?
+		k_sleep(K_MSEC(50));
+	}
+	// use soft reset
+	else {
+		int hal_ret;
+		uint32_t temp;
+
+		hal_ret = read_eth_phy_register(heth, PHY_ADDR, PHY_BCR, (uint32_t *) &temp);
+		if (hal_ret != HAL_OK) {
+			LOG_ERR("failed to %s %s: %d", "read", "PHY_BCR", hal_ret);
+			return -EIO;
+		}
+
+		temp |= PHY_REG_BCR_RESET;
+
+		hal_ret = write_eth_phy_register(heth, PHY_ADDR, PHY_BCR, temp);
+		if (hal_ret != HAL_OK) {
+			LOG_ERR("failed to %s %s: %d", "write", "PHY_BCR", hal_ret);
+			return -EIO;
+		}
+
+		// per 802.3u 22.2.4.1.1, reset will complete within 500ms
+		k_sleep(K_MSEC(500));
+	}
+
+	return 0;
 }
 
 static inline void disable_mcast_filter(ETH_HandleTypeDef *heth)
@@ -810,7 +871,28 @@ static int eth_initialize(const struct device *dev)
 		return ret;
 	}
 
+	if(cfg->phyReset.port) {
+		if(!device_is_ready(cfg->phyReset.port)) {
+			return -ENXIO;
+		}
+
+		ret = gpio_pin_configure_dt(&cfg->phyReset, GPIO_OUTPUT_INACTIVE);
+		if (ret < 0) {
+			LOG_ERR("Could not configure ethernet pins");
+			return ret;
+		}
+	}
+
 	heth = &dev_data->heth;
+
+#if defined(CONFIG_ETH_STM32_RESET_ON_INIT)
+	/* reset the PHY (assert hardware reset line or do soft reset) */
+	ret = phy_do_reset(cfg, heth);
+	if(ret < 0) {
+		LOG_ERR("failed to reset PHY: %d", ret);
+		return ret;
+	}
+#endif
 
 #if defined(CONFIG_ETH_STM32_HAL_RANDOM_MAC)
 	generate_mac(dev_data->mac_addr);
@@ -912,6 +994,97 @@ static int eth_initialize(const struct device *dev)
 	mac_config.Speed = ETH_SPEED_100M;
 	HAL_ETH_SetMACConfig(heth, &mac_config);
 #endif /* CONFIG_SOC_SERIES_STM32H7X */
+
+	/*
+	 * If autonegotiation is not enabled in the configuration, write to the PHY the
+	 * hardcoded link state.
+	 *
+	 * This is typically done by the phy_mii driver, but on STM32 this driver isn't used
+	 * because the Ethernet driver doesn't expose any APIs to do PHY stuff, and there's no
+	 * separate PHY defined in the device tree.
+	 */
+	if(cfg->force) {
+		uint32_t old, temp;
+
+		hal_ret = read_eth_phy_register(&dev_data->heth,
+				PHY_ADDR, PHY_BCR, (uint32_t *) &temp);
+		if (hal_ret != HAL_OK) {
+			LOG_ERR("failed to %s %s: %d", "read", "PHY_BCR", hal_ret);
+			return -EIO;
+		}
+		old = temp;
+
+		// mask out the autonegotiation bit always
+		temp &= ~PHY_REG_BCR_AUTOEN;
+
+		// select speed and duplex
+		if(cfg->forceSpeed == 10) {
+			temp &= ~PHY_REG_BCR_SPEED;
+		} else if(cfg->forceSpeed == 100) {
+			temp |= PHY_REG_BCR_SPEED;
+		} else {
+			LOG_ERR("unsupported fixed speed: %u", cfg->forceSpeed);
+			return -EINVAL;
+		}
+
+		if(cfg->forceDuplex) {
+			temp |= PHY_REG_BCR_DUPLEX;
+		} else {
+			temp &= ~PHY_REG_BCR_DUPLEX;
+		}
+
+		hal_ret = write_eth_phy_register(&dev_data->heth, PHY_ADDR, PHY_BCR, temp);
+		if (hal_ret != HAL_OK) {
+			LOG_ERR("failed to %s %s: %d", "write", "PHY_BCR", hal_ret);
+			return -EIO;
+		}
+
+		LOG_DBG("phy %s: %04x -> %04x", "PHY_BCR", old, temp);
+	}
+
+	/*
+	 * If MDI-X is not enabled (it is by default) we need to write to the PHY registers to
+	 * disable it like with autonegotiation above.
+	 *
+	 * In this case, we assume the PHY is LAN8742A or compatible. MDI-X is configured via
+	 * Register 27: Special Control/Status Indications Register. Bit 15 (AMDIXCTRL) is used to
+	 * enable or disable MDI-X; bit 13 (CH_SELECT) toggles between straight through (0) and
+	 * crossover (1) mode.
+	 */
+	do {
+		uint32_t old, temp;
+
+		hal_ret = read_eth_phy_register(&dev_data->heth,
+				PHY_ADDR, PHY_SPECIAL_CTRL, (uint32_t *) &temp);
+		if (hal_ret != HAL_OK) {
+			LOG_ERR("failed to %s %s: %d", "read", "PHY_SPECIAL_CTRL", hal_ret);
+			return -EIO;
+		}
+		old = temp;
+
+		// enable Auto MDI-X (clear AMDIXCTRL, 27.15)
+		if(cfg->mdix) {
+			temp &= ~(1U << 15);
+		}
+		// disable Auto MDI-X (set AMDIXCTRL, 27.15)
+		else {
+			temp |= (1U << 15);
+
+			if(cfg->ch_swap) {
+				temp |= (1U << 13);
+			} else {
+				temp &= ~(1U << 13);
+			}
+		}
+
+		hal_ret = write_eth_phy_register(&dev_data->heth, PHY_ADDR, PHY_SPECIAL_CTRL, temp);
+		if (hal_ret != HAL_OK) {
+			LOG_ERR("failed to %s %s: %d", "write", "PHY_SPECIAL_CTRL", hal_ret);
+			return -EIO;
+		}
+
+		LOG_DBG("phy %s: %04x -> %04x", "PHY_SPECIAL_CTRL", old, temp);
+	} while(0);
 
 	LOG_DBG("MAC %02x:%02x:%02x:%02x:%02x:%02x",
 		dev_data->mac_addr[0], dev_data->mac_addr[1],
@@ -1069,6 +1242,38 @@ static const struct eth_stm32_hal_dev_cfg eth0_config = {
 		       .enr = DT_INST_CLOCKS_CELL_BY_NAME(0, mac_clk_ptp, bits)},
 #endif /* !CONFIG_SOC_SERIES_STM32H7X */
 	.pcfg = PINCTRL_DT_INST_DEV_CONFIG_GET(0),
+
+	.phyReset = GPIO_DT_SPEC_INST_GET_OR(0, reset_gpios, {0}),
+
+#if defined(CONFIG_ETH_STM32_AUTO_NEGOTIATION_ENABLE)
+	.force = 0,
+#else
+	.force = 1,
+#endif
+
+#if defined(CONFIG_ETH_STM32_SPEED_10M)
+	.forceSpeed = 10,
+#else
+	.forceSpeed = 100,
+#endif
+
+#if defined(CONFIG_ETH_STM32_MODE_HALFDUPLEX)
+	.forceDuplex = 0,
+#else
+	.forceDuplex = 1,
+#endif
+
+#if defined(CONFIG_ETH_STM32_MDI_X)
+	.mdix = 1,
+#else
+	.mdix = 0,
+#endif
+
+#if defined(CONFIG_ETH_STM32_MDI_CH_SWAP)
+	.ch_swap = 1,
+#else
+	.ch_swap = 0,
+#endif
 };
 
 static struct eth_stm32_hal_dev_data eth0_data = {
