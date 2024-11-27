@@ -4,6 +4,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#pragma GCC diagnostic ignored "-Warray-bounds"        // Silence Zephyr RTOS warning from appearing in build output. 
+
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(log_backend_net, CONFIG_LOG_DEFAULT_LEVEL);
 
