@@ -28,6 +28,18 @@ extern "C" {
 	  sizeof("0011223344556677") - 1 : 0))
 
 /**
+ * @brief Set the device hostname
+ */
+#if defined(CONFIG_NET_HOSTNAME_ENABLE)
+int net_hostname_set(const char *newHostname);
+#else
+int net_hostname_set(const char *newHostname) {
+	return -ENOTSUP;
+}
+#endif
+
+
+/**
  * @brief Get the device hostname
  *
  * @details Return pointer to device hostname.

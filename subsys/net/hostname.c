@@ -11,6 +11,8 @@
 #include <zephyr/logging/log.h>
 LOG_MODULE_REGISTER(net_hostname, CONFIG_NET_HOSTNAME_LOG_LEVEL);
 
+#include <string.h>
+
 #include <zephyr/zephyr.h>
 
 #include <zephyr/net/hostname.h>
@@ -18,9 +20,28 @@ LOG_MODULE_REGISTER(net_hostname, CONFIG_NET_HOSTNAME_LOG_LEVEL);
 
 static char hostname[NET_HOSTNAME_MAX_LEN + 1];
 
+#if IS_ENABLED(CONFIG_LOG_BACKEND_NET)
+extern int log_backend_net_set_hostname(const char *newHostname);
+#endif
+
 const char *net_hostname_get(void)
 {
 	return hostname;
+}
+
+int net_hostname_set(const char *newHostname) {
+	if(!newHostname) {
+		return -EFAULT;
+	}
+
+	strncpy(hostname, newHostname, NET_HOSTNAME_MAX_LEN);
+
+	// update syslog hostname if enabled
+#if IS_ENABLED(CONFIG_LOG_BACKEND_NET)
+	return log_backend_net_set_hostname(hostname);
+#else
+	return 0;
+#endif
 }
 
 #if defined(CONFIG_NET_HOSTNAME_UNIQUE)
