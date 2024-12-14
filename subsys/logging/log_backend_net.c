@@ -236,3 +236,13 @@ const struct log_backend *log_backend_net_get(void)
 {
 	return &log_backend_net;
 }
+
+int log_backend_net_set_hostname(const char *newHostname) {
+	if(!newHostname) {
+		return -EFAULT;
+	}
+
+	strncpy(dev_hostname, newHostname, sizeof(dev_hostname));
+
+	return 0;
+}
