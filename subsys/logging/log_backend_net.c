@@ -36,6 +36,9 @@ struct sockaddr server_addr;
 static bool panic_mode;
 static uint32_t log_format_current = CONFIG_LOG_BACKEND_NET_OUTPUT_DEFAULT;
 
+// flag set when the log server has been overridden
+static bool gAddressOverride = false;
+
 const struct log_backend *log_backend_net_get(void);
 
 NET_PKT_SLAB_DEFINE(syslog_tx_pkts, CONFIG_LOG_BACKEND_NET_MAX_BUF);
@@ -201,14 +204,17 @@ static void init_net(struct log_backend const *const backend)
 	ARG_UNUSED(backend);
 	int ret;
 
-	net_sin(&server_addr)->sin_port = htons(514);
+	// only apply from config if never set
+	if(!gAddressOverride) {
+		net_sin(&server_addr)->sin_port = htons(514);
 
-	ret = net_ipaddr_parse(CONFIG_LOG_BACKEND_NET_SERVER,
-			       sizeof(CONFIG_LOG_BACKEND_NET_SERVER) - 1,
-			       &server_addr);
-	if (ret == 0) {
-		LOG_ERR("Cannot configure syslog server address");
-		return;
+		ret = net_ipaddr_parse(CONFIG_LOG_BACKEND_NET_SERVER,
+				sizeof(CONFIG_LOG_BACKEND_NET_SERVER) - 1,
+				&server_addr);
+		if (ret == 0) {
+			LOG_ERR("Cannot configure syslog server address");
+			return;
+		}
 	}
 
 	log_backend_deactivate(log_backend_net_get());
@@ -243,6 +249,31 @@ int log_backend_net_set_hostname(const char *newHostname) {
 	}
 
 	strncpy(dev_hostname, newHostname, sizeof(dev_hostname));
+
+	return 0;
+}
+
+/**
+ * @brief Set IP address of remote syslog server
+ *
+ * This must be called before the log backend is initialized.
+ *
+ * If not called, the default specified via config (CONFIG_LOG_BACKEND_NET_SERVER) is used.
+ */
+int log_backend_net_set_server(struct sockaddr *newAddr) {
+	if(!newAddr) {
+		return -EFAULT;
+	}
+
+	// musn't be initialized yet
+	if(net_init_done) {
+		// TODO: we could probably force re-initializing the socket
+		return -EINVAL;
+	}
+
+	// set it
+	server_addr = *newAddr;
+	gAddressOverride = true;
 
 	return 0;
 }
