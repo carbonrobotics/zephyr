@@ -33,7 +33,7 @@ extern "C" {
 #if defined(CONFIG_NET_HOSTNAME_ENABLE)
 int net_hostname_set(const char *newHostname);
 #else
-int net_hostname_set(const char *newHostname) {
+static inline int net_hostname_set(const char *newHostname) {
 	return -ENOTSUP;
 }
 #endif
