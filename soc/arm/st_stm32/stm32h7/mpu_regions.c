@@ -13,6 +13,18 @@ static const struct arm_mpu_region mpu_regions[] = {
 					 REGION_FLASH_ATTR(REGION_FLASH_SIZE)),
 	MPU_REGION_ENTRY("SRAM", CONFIG_SRAM_BASE_ADDRESS,
 					 REGION_RAM_ATTR(REGION_SRAM_SIZE)),
+
+	/*
+	 * Map system flash area as execute never, strongly ordered, to prevent CPU core
+	 * from making speculative accesses.
+	 *
+	 * This results in spurious RDSERR and RDPERR errors from getting asserted.
+	 */
+	MPU_REGION_ENTRY("SYSTEM", 0x1FF00000,
+					{ (STRONGLY_ORDERED_SHAREABLE |
+					REGION_512K |
+					MPU_RASR_XN_Msk | P_RW_U_NA_Msk) }),
+
 #if DT_NODE_HAS_STATUS(DT_NODELABEL(sram3), okay) && \
 		DT_NODE_HAS_STATUS(DT_NODELABEL(mac), okay)
 	MPU_REGION_ENTRY("SRAM3_ETH_BUF",
