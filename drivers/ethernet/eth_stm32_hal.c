@@ -90,6 +90,12 @@ LOG_MODULE_REGISTER(LOG_MODULE_NAME);
 #define __eth_stm32_buf  __aligned(4)
 #endif
 
+#ifdef CONFIG_CARBON_PTP_USE_INTERCEPT
+/* PTP slave callback functions */
+extern bool ptp_slave_is_active(void);
+extern int ptp_slave_process_packet(struct net_if *iface, struct net_pkt *pkt);
+#endif
+
 static ETH_DMADescTypeDef dma_rx_desc_tab[ETH_RXBUFNB] __eth_stm32_desc;
 static ETH_DMADescTypeDef dma_tx_desc_tab[ETH_TXBUFNB] __eth_stm32_desc;
 static uint8_t dma_rx_buffer[ETH_RXBUFNB][ETH_RX_BUF_SIZE] __eth_stm32_buf;
@@ -698,6 +704,13 @@ static void rx_thread(void *arg1, void *unused1, void *unused2)
 							     vlan_tag));
 			}
 			while ((pkt = eth_rx(dev, &vlan_tag)) != NULL) {
+#if defined(CONFIG_CARBON_PTP_USE_INTERCEPT)
+				// check if PTP slave wants to handle this packet
+				if (ptp_slave_is_active() &&
+				    ptp_slave_process_packet(net_pkt_iface(pkt), pkt) == 0) {
+					continue;
+				}
+#endif
 				res = net_recv_data(net_pkt_iface(pkt), pkt);
 				if (res < 0) {
 					eth_stats_update_errors_rx(

@@ -173,6 +173,11 @@ config ETH_STM32_HAL_PTP_CLOCK_INIT_PRIO
 	  a dependency from the network stack that this device
 	  initializes before network stack (NET_INIT_PRIO).
 
+config CARBON_PTP_USE_INTERCEPT
+	bool "Enable Carbon PTP hacks"
+	help
+	  Enable Carbon-specific PTP packet handling hacks.
+
 endif # SOC_SERIES_STM32F7X || SOC_SERIES_STM32H7X
 
 endif # ETH_STM32_HAL
