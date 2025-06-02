@@ -105,6 +105,16 @@ static uint8_t dma_tx_buffer[ETH_TXBUFNB][ETH_TX_BUF_SIZE] __eth_stm32_buf;
 static ETH_TxPacketConfig tx_config;
 #endif
 
+/**
+ * @brief Callback for every received packet (L2)
+ *
+ * Implement in app firmware to handle stuff (such as petting watchdogs) while stuck in the receive
+ * thread.
+ */
+void __weak __carbon_eth_rx_callback_l2() {
+	/* nothing */
+}
+
 static HAL_StatusTypeDef read_eth_phy_register(ETH_HandleTypeDef *heth,
 						uint32_t PHYAddr,
 						uint32_t PHYReg,
@@ -719,6 +729,9 @@ static void rx_thread(void *arg1, void *unused1, void *unused2)
 						"into RX queue: %d", res);
 					net_pkt_unref(pkt);
 				}
+
+				// packet RX callback (for watchdog petting)
+				__carbon_eth_rx_callback_l2();
 			}
 		} else if (res == -EAGAIN) {
 			/* semaphore timeout period expired, check link status */
