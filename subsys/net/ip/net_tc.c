@@ -39,6 +39,15 @@ static struct net_traffic_class tx_classes[NET_TC_TX_COUNT];
 #if NET_TC_RX_COUNT > 0
 static struct net_traffic_class rx_classes[NET_TC_RX_COUNT];
 #endif
+/**
+ * @brief Callback for every received packet (L3)
+ *
+ * Implement in app firmware to handle stuff (such as petting watchdogs) while stuck in the receive
+ * thread.
+ */
+void __weak __carbon_eth_rx_callback_l3() {
+	/* nothing */
+}
 
 #if NET_TC_RX_COUNT > 0 || NET_TC_TX_COUNT > 0
 static void submit_to_queue(struct k_fifo *queue, struct net_pkt *pkt)
@@ -248,6 +257,7 @@ static void tc_rx_handler(struct k_fifo *fifo)
 		}
 
 		net_process_rx_packet(pkt);
+		__carbon_eth_rx_callback_l3();
 	}
 }
 #endif
