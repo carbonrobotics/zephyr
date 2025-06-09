@@ -137,6 +137,7 @@ config MCUMGR_TRANSPORT_NETBUF_USER_DATA_SIZE
 	int "Size of mcumgr buffer user data"
 	range MCUMGR_TRANSPORT_NETBUF_MIN_USER_DATA_SIZE 128
 	default MCUMGR_TRANSPORT_NETBUF_MIN_USER_DATA_SIZE
+	help
 	  The size, in bytes, of user data to allocate for each mcumgr buffer.
 
 	  Different mcumgr transports impose different requirements for this
