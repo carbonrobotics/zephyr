@@ -60,8 +60,8 @@ static struct configs configs = {
 #endif
 };
 
-BUILD_ASSERT(sizeof(struct sockaddr) <= CONFIG_MCUMGR_TRANSPORT_NETBUF_USER_DATA_SIZE,
-	     "CONFIG_MCUMGR_TRANSPORT_NETBUF_USER_DATA_SIZE must be >= sizeof(struct sockaddr)");
+BUILD_ASSERT(sizeof(struct sockaddr) <= CONFIG_MCUMGR_BUF_USER_DATA_SIZE,
+	     "CONFIG_MCUMGR_BUF_USER_DATA_SIZE must be >= sizeof(struct sockaddr)");
 
 #if CONFIG_MCUMGR_SMP_UDP_IPV4
 static int smp_udp4_tx(struct zephyr_smp_transport *zst, struct net_buf *nb)
