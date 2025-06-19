@@ -126,12 +126,12 @@ config USE_STM32_HAL_DSI
 	  Enable STM32Cube Display Serial Interface Host (DSI) HAL module driver
 
 config USE_STM32_HAL_ETH
-	bool
+	bool "This string added to allow use from Zephyr applications."
 	help
 	  Enable STM32Cube Ethernet (ETH) HAL module driver
 
 config USE_STM32_HAL_ETH_EX
-	bool
+	bool "This string added to allow use from Zephyr applications."
 	help
 	  Enable STM32Cube Extended Ethernet (ETH) HAL module driver
 
