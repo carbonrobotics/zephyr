@@ -68,7 +68,7 @@ static void bme680_calc_temp(struct bme680_data *data, uint32_t adc_temp)
 	data->calc_temp = ((data->t_fine * 5) + 128) >> 8;
 }
 
-static void bme680_calc_press(struct bme680_data *data, uint32_t adc_press)
+static int bme680_calc_press(struct bme680_data *data, uint32_t adc_press)
 {
 	int32_t var1, var2, var3, calc_press;
 
@@ -82,6 +82,14 @@ static void bme680_calc_press(struct bme680_data *data, uint32_t adc_press)
 	       + (((int32_t)data->par_p2 * var1) >> 1);
 	var1 = var1 >> 18;
 	var1 = ((32768 + var1) * (int32_t)data->par_p1) >> 15;
+	/* A corrupted readout can drive var1 to zero; the divisions below
+	 * would fault (SCB DIV_0_TRP), so reject the sample instead.
+	 */
+	if (var1 == 0) {
+		LOG_WRN("rejecting sample: pressure divisor is zero (par_p1=%u)",
+			data->par_p1);
+		return -EIO;
+	}
 	calc_press = 1048576 - adc_press;
 	calc_press = (calc_press - (var2 >> 12)) * ((uint32_t)3125);
 	/* This max value is used to provide precedence to multiplication or
@@ -105,6 +113,7 @@ static void bme680_calc_press(struct bme680_data *data, uint32_t adc_press)
 	data->calc_press = calc_press
 			   + ((var1 + var2 + var3
 			       + ((int32_t)data->par_p7 << 7)) >> 4);
+	return 0;
 }
 
 static void bme680_calc_humidity(struct bme680_data *data, uint16_t adc_humidity)
@@ -214,7 +223,7 @@ static int bme680_sample_fetch(const struct device *dev,
 	uint32_t adc_temp, adc_press;
 	uint16_t adc_hum, adc_gas_res;
 	int size = BME680_LEN_FIELD;
-	int ret;
+	int ret, calc_ret = 0;
 
 	__ASSERT_NO_MSG(chan == SENSOR_CHAN_ALL);
 
@@ -236,9 +245,11 @@ static int bme680_sample_fetch(const struct device *dev,
 
 	if (data->new_data) {
 		bme680_calc_temp(data, adc_temp);
-		bme680_calc_press(data, adc_press);
-		bme680_calc_humidity(data, adc_hum);
-		bme680_calc_gas_resistance(data, gas_range, adc_gas_res);
+		calc_ret = bme680_calc_press(data, adc_press);
+		if (calc_ret == 0) {
+			bme680_calc_humidity(data, adc_hum);
+			bme680_calc_gas_resistance(data, gas_range, adc_gas_res);
+		}
 	}
 
 	/* Trigger the next measurement */
@@ -248,7 +259,7 @@ static int bme680_sample_fetch(const struct device *dev,
 		return ret;
 	}
 
-	return 0;
+	return calc_ret;
 }
 
 static int bme680_channel_get(const struct device *dev,
@@ -394,6 +405,17 @@ static int bme680_init(const struct device *dev)
 	err = bme680_read_compensation(dev);
 	if (err < 0) {
 		return err;
+	}
+
+	/* A degraded bus can corrupt these reads into ACKed all-zeros (or
+	 * all-ones); genuine parts never have gain terms at either rail.
+	 * par_p1 == 0 would divide by zero in the pressure compensation.
+	 */
+	if (data->par_t1 == 0 || data->par_t1 == 0xFFFF ||
+	    data->par_p1 == 0 || data->par_p1 == 0xFFFF) {
+		LOG_ERR("calibration invalid (par_t1=%u par_p1=%u)",
+			data->par_t1, data->par_p1);
+		return -ENODEV;
 	}
 
 	err = bme680_reg_write(dev, BME680_REG_CTRL_HUM, BME680_HUMIDITY_OVER);
